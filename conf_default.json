@@ -1,0 +1,14 @@
+{
+  "Configurations": {
+    "1080": {"sar": [9,10], "circ": [396,92,1140]},
+    "480": {"sar": null, "circ": [45,8,530]}
+  },
+  "SquarePixel": true,
+  "OutputLocation": null,
+  "OutputSuffix": "_fixed",
+  "OutputFormat": ".mp4",
+  "OutputOptions": {
+    "preset": "slow",
+    "crf": 22
+  }
+}
