@@ -7,60 +7,72 @@ def writeOptionJSON(filename, opts):
         json.dump(opts, outfile, indent=2)
 
 
-def readOptionJSON(filename, baseopts={}):
+def readOptionJSON(filename, baseopts={}, update_file=True):
     try:
         with open(filename, "r") as json_file:
             useropts = json.load(json_file)
     except:
-        opts = defaultOption(True)
-        writeOptionJSON(filename, opts)
+        opts = defaultOption()
+        if update_file:
+            writeOptionJSON(filename, opts)
         return opts
 
     # validate
     validateOptions(useropts)
 
     if not baseopts:
-        baseopts = defaultOption(False)
+        baseopts = defaultOption()
     opts = {**baseopts, **useropts}
 
-    if not "OutputOptions" in opts or not opts["OutputOptions"]:
-        if opts["OutputFormat"] == ".mp4":
-            opts["OutputOptions"] = defaultMP4Options()
-        elif opts["OutputFormat"] == ".avi":
-            opts["OutputOptions"] = defaultAVIOptions()
-        else:
-            raise Exception(
-                "Unknown OutputFormat specified. It must be either '.mp4' or '.avi'"
-            )
+    # save if user set is missing any option
+    if set(opts.keys()) - set(useropts.keys()) and update_file:
         writeOptionJSON(filename, opts)
     return opts
 
 
-def defaultOption(include_output_opts=False):
+def defaultOption():
 
-    opts = {
-        "CropFrameAspectRatio": 1,
-        "OutputFormat": ".mp4",
-        "OutputOptions": defaultMP4Options() if include_output_opts else {},
+    return {
+        "Profiles": {
+            "height=1080": {"sar": [9, 10], "circ": [396, 92, 1140]},
+            "height=480": {"circ": [45, 8, 530]},
+        },
+        "SquarePixel": 1,
+        "OutputFolder": None,
+        "OutputSuffix": "_fixed",
+        "OutputExt": ".mp4",
+        "OutputOptions": {"preset": "slow", "crf": 22, "pix_fmt": "yuv420p"},
+        "Overwrite": False,
     }
-
-    return opts
-
-
-def defaultMP4Options():
-    return {"c:v": "libx264", "preset": "slow", "crf": 22, "pix_fmt": "yuv420p"}
-
-
-def defaultAVIOptions():
-    return {"c:v": "huffyuv", "pix_fmt": "rgb24"}
 
 
 def validateOptions(opts):
+    pos_int = {"type": "integer", "min": 0}
     v = cerberus.Validator(
         {
-            "CropFrameAspectRatio": {"type": "float", "min": 0, "empty": False},
-            "OutputFormat": {"type": "string", "empty": False, "regex": r"^\.\S+$"},
-            "OutputOptions": {"type": "dict", "empty": True},
+            "Profiles": {
+                "type": "dict",
+                "valuesrules": {
+                    "type": "dict",
+                    "schema": {
+                        "sar": {
+                            "type": "list",
+                            "items": [pos_int, pos_int],
+                        },
+                        "circ": {
+                            "type": "list",
+                            "items": [pos_int, pos_int, pos_int],
+                        },
+                    },
+                    "empty": False,
+                },
+            },
+            "SquarePixel": {"type": "integer"},
+            "OutputFolder": {"type": "string", "nullable": True, "empty": True},
+            "OutputSuffix": {"type": "string", "empty": True},
+            "OutputExt": {"type": "string", "empty": False},
+            "OutputOptions": {"type": "dict"},
+            "Overwrite": {"type": "boolean", "empty": False},
         }
     )
     if not v.validate(opts):

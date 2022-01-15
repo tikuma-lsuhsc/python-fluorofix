@@ -1,3 +1,4 @@
 ffmpegio
 cerberus
 pyinstaller
+tqdm

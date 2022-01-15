@@ -1,0 +1,32 @@
+{
+  "Profiles": {
+    "height=1080": {
+      "sar": [
+        9,
+        10
+      ],
+      "circ": [
+        396,
+        92,
+        1140
+      ]
+    },
+    "height=480": {
+      "circ": [
+        45,
+        8,
+        530
+      ]
+    }
+  },
+  "SquarePixel": 1,
+  "OutputFolder": null,
+  "OutputSuffix": "_fixed",
+  "OutputExt": ".mp4",
+  "OutputOptions": {
+    "preset": "slow",
+    "crf": 22,
+    "pix_fmt": "yuv420p"
+  },
+  "Overwrite": true
+}
