@@ -3,6 +3,7 @@ from os import path
 from configure import readOptionJSON
 from transcode import transcode
 from tqdm import tqdm
+import ffmpegio
 
 if not getattr(sys, "frozen", False):
     print("non-exe test run")
@@ -17,6 +18,11 @@ if path.basename(sys.executable).startswith("python"):
     optfile = path.splitext(__file__)[0] + ".json"
 else:
     optfile = path.splitext(sys.executable)[0] + ".json"
+    try:
+        basedir = sys._MEIPASS
+    except:
+        basedir = path.dirname(sys.executable)
+    ffmpegio.set_path(path.join(basedir, "bin"))
 
 opts = readOptionJSON(optfile)
 
@@ -44,6 +50,6 @@ with tqdm(total=n) as pbar:
             pbar.update(i)
             transcode(file, opts)
         except Exception as err:
-            pass#print(f"({i}/{n}) {file}... {fail_msg}")
+            pass  # print(f"({i}/{n}) {file}... {fail_msg}")
 
 input("\nPress Enter to Exit...")
