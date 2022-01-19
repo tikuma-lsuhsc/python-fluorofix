@@ -28,15 +28,17 @@ def find_profile(info, profiles):
 def form_filters(info, p, config):
     filters = []
 
+    h = info["height"]
+    w = info["width"]
     sar = p.get("sar", info.get("sample_aspect_ratio", None))
     if sar is not None:
         if isinstance(sar, Fraction):
             sar = [sar.numerator, sar.denominator]
         if (sar[0] < sar[1]) == (config["SquarePixel"] > 0):
-            info["height"] = h = info["height"] * sar[1] // sar[0]
+            h = info["height"] * sar[1] // sar[0]
             filters.append(f"scale=height={h}")
         elif (sar[0] > sar[1]) == (config["SquarePixel"] < 0):
-            info["width"] = w = info["width"] * sar[0] // sar[1]
+            w = info["width"] * sar[0] // sar[1]
             filters.append(f"scale={w}")
     if config["SquarePixel"]:
         filters.append(f"setsar=1:1")
@@ -45,12 +47,14 @@ def form_filters(info, p, config):
         x0, y0, dia = p["circ"]
         if sar is not None and config["SquarePixel"] < 0:
             # params are defined assuming stretching
-            s = min(sar)/max(sar)
-            dia *= s**2.0
+            s = min(sar) / max(sar)
+            dia *= s ** 2.0
             x0 *= s
             y0 *= s
         dia = round(dia)
-        filters.append(f"crop={dia}:{dia}:{round(x0)}:{round(y0)}")
+        w = dia if w > x0 + dia else w - x0
+        h = dia if h > y0 + dia else h - y0
+        filters.append(f"crop={w}:{h}:{round(x0)}:{round(y0)}")
         fg = ",".join(filters)
         return fg, dia
     else:
@@ -73,9 +77,15 @@ def get_dst(src, config):
 
 def transcode(src, config):
 
-    info = probe.video_streams_basic(src)[0]
+    try:
+        info = probe.video_streams_basic(src)[0]
+    except:
+        raise ValueError('not a video file')
 
-    prof = find_profile(info, config["Profiles"])
+    try:
+        prof = find_profile(info, config["Profiles"])
+    except:
+        raise ValueError('no matching profile found')
 
     dst = get_dst(src, config)
     makedirs(path.split(dst)[0], exist_ok=True)
