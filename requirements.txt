@@ -1,4 +1,6 @@
-ffmpegio
+ffmpegio-core
 cerberus
 pyinstaller
 tqdm
+PyQt5
+matplotlib

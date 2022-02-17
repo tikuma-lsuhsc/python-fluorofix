@@ -1,5 +1,5 @@
 import sys
-from os import path, walk, getcwd
+from os import path, walk
 from configure import readOptionJSON
 from transcode import transcode
 
@@ -14,11 +14,10 @@ if not getattr(sys, "frozen", False):
         sys.executable,
         # "data\\280\\Pt280_Visit1.avi",
         "C:\\Users\\Takeshi Ikuma\\Documents\\python-fluorofix\\data\\1543",
+        'C:\\Users\\Takeshi Ikuma\\Documents\\python-fluorofix\\data\\fluorofix_nsq.json'
         # "data\\480p.mp4",
         # "data\\1080p.mp4",
     ]
-
-print(f"argv: {sys.argv}")
 
 # read the config file
 if path.basename(sys.executable).startswith("python"):
