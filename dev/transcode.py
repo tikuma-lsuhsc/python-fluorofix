@@ -22,6 +22,7 @@ def create_mask(pngfile, dia, sar=None):
     ]
 
     if sar is not None:
+        sar = sar[0] / sar[1]
         filtspec[0].append(
             (
                 "scale",
@@ -151,7 +152,7 @@ def transcode(src, config):
 
         if circ_dia:
             pngfile = path.join(dir, "mask.png")
-            create_mask(pngfile, circ_dia)
+            create_mask(pngfile, circ_dia, mask_sar)
             args["inputs"].append((pngfile, None))
             fg = f"{fg}[vid];[vid][1:v]overlay"
 
@@ -167,8 +168,9 @@ if __name__ == "__main__":
     import configure
 
     config = configure.defaultOption()
-    config['SquarePixel'] = 0
-    config["OutputSuffix"] = '_fixed_nsq'
+    config["Overwrite"] = True
+    config["SquarePixel"] = 0
+    config["OutputSuffix"] = "_fixed_nsq"
     url = r"data\480p.mp4"
     # url = r"data\1080p.mp4"
     dst_url = transcode(url, config)
