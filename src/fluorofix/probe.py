@@ -7,7 +7,7 @@ from . import configure
 def find_profile(info, profiles):
     def test(keys):
         for k, v in keys.items():
-            if str(info[k]) != v:
+            if str(info[k]) != str(v):
                 return False
         return True
 
@@ -30,15 +30,16 @@ def get_dst(ctx, src):
 
 def check_file(ctx, filepath):
 
-    res = {"info": None, "prof": None, "dst": None}
+    res = {"prof": None, "dst": None}
 
     try:
-        res["info"] = info = probe.video_streams_basic(filepath)[0]
+        info = probe.video_streams_basic(filepath)[0]
+        assert info["codec_name"] != "ansi"
         try:
             res["prof"] = find_profile(info, ctx["Profiles"])
             res["dst"] = get_dst(ctx, filepath)
-        except:
-            pass
+        except Exception as e:
+            print(e)
     except:
         pass
 
@@ -56,6 +57,8 @@ def analyze_files(ctx, paths):
         else:
             (vid_files, json_files)[x.endswith(".json")].add(x)
 
-    return {file: check_file(ctx, file) for file in vid_files}, {
-        file: configure.readOptionJSON(file) for file in json_files
-    }
+    return {
+        file: data
+        for file, data in [(file, check_file(ctx, file)) for file in vid_files]
+        if data["prof"] is not None
+    }, {file: configure.readOptionJSON(file) for file in json_files}
