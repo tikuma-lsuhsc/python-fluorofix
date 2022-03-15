@@ -1,7 +1,7 @@
 import PyInstaller.__main__
 
 import os
-from ffmpegio.ffmpeg import FFMPEG_BIN, FFPROBE_BIN
+from ffmpegio.path import FFMPEG_BIN, FFPROBE_BIN
 
 from PyInstaller import log as logging
 
