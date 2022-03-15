@@ -28,7 +28,8 @@ else:
         basedir = sys._MEIPASS
     except:
         basedir = path.dirname(sys.executable)
-    ffmpegio.set_path(path.join(basedir, "bin"))
+    ffmpeg_bin = path.join(basedir, "bin")
+    ffmpegio.set_path(ffmpeg_bin)
 
 opts = readOptionJSON(optfile)
 
