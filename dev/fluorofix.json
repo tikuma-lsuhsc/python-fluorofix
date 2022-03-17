@@ -25,7 +25,7 @@
   "OutputExt": ".mp4",
   "OutputOptions": {
     "preset": "slow",
-    "crf": 22,
+    "crf": 8,
     "pix_fmt": "yuv420p"
   },
   "Overwrite": true

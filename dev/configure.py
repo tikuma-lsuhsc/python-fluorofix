@@ -41,7 +41,7 @@ def defaultOption():
         "OutputFolder": None,
         "OutputSuffix": "_fixed",
         "OutputExt": ".mp4",
-        "OutputOptions": {"preset": "slow", "crf": 22, "pix_fmt": "yuv420p"},
+        "OutputOptions": {"preset": "slow", "crf": 8, "pix_fmt": "yuv420p"},
         "Overwrite": False,
     }
 
