@@ -1,7 +1,19 @@
+import logging
 from ffmpegio import probe
 from os import path, walk
 
 from . import configure
+
+
+def is_video(filepath, profiles=None):
+
+    try:
+        info = probe.video_streams_basic(filepath)[0]
+        if profiles is not None:
+            find_profile(info, profiles)
+        return True
+    except:
+        return False
 
 
 def find_profile(info, profiles):
@@ -39,7 +51,7 @@ def check_file(ctx, filepath):
             res["prof"] = find_profile(info, ctx["Profiles"])
             res["dst"] = get_dst(ctx, filepath)
         except Exception as e:
-            print(e)
+            logging.warning(e)
     except:
         pass
 
