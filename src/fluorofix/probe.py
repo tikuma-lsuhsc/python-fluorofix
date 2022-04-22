@@ -9,11 +9,16 @@ def is_video(filepath, profiles=None):
 
     try:
         info = probe.video_streams_basic(filepath)[0]
-        if profiles is not None:
-            find_profile(info, profiles)
-        return True
+        if profiles is None:
+            found = True
     except:
-        return False
+        found = False
+
+    try:
+        if found:
+            return True, find_profile(info, profiles)
+    finally:
+        return found, None
 
 
 def find_profile(info, profiles):
