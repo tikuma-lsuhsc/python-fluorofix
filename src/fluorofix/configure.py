@@ -33,11 +33,11 @@ def defaultOption():
 
     return {
         "Profiles": {
-            "Toshiba Kalare": (
+            "Toshiba Kalare (1080p)": (
                 {"height": 1080},
                 {"sar": [9, 10], "circ": [396, 92, 1140]},
             ),
-            "Siemens Axiom": ({"height": 480}, {"circ": [45, 8, 530]}),
+            "Siemens Axiom (480p)": ({"height": 480}, {"circ": [45, 8, 530]}),
         },
         "SquarePixel": 1,
         "OutputFolder": None,
