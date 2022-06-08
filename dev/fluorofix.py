@@ -13,8 +13,10 @@ if not getattr(sys, "frozen", False):
     sys.argv = [
         sys.executable,
         # "data\\280\\Pt280_Visit1.avi",
-        "C:\\Users\\Takeshi Ikuma\\Documents\\python-fluorofix\\data\\1543",
-        'C:\\Users\\Takeshi Ikuma\\Documents\\python-fluorofix\\data\\fluorofix_nsq.json'
+        r"data\florofix items"
+        # r"data\florofix items\new_1080p.json",
+        # r"data\florofix items\cc 6122  cpbar with pharyngeal emtying Rec1_hd_video_2022_06_01T12_19_09_066.mp4",
+        # r"data\florofix items\DUPAN 5 2 2022 UES and E.mp4"
         # "data\\480p.mp4",
         # "data\\1080p.mp4",
     ]
