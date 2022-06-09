@@ -4,49 +4,52 @@ import re
 from tempfile import TemporaryDirectory
 from os import path, makedirs
 
+import ffmpegio
 
-def create_mask(pngfile, dia, sar=None):
+
+def create_mask(dia, sar=None, color="black", x0=0, y0=0, w=None, h=None):
+    """Create an FFmpeg filtergraph to generate a circular mask to deidentify
+
+    :param dia: mask diameter in pixels
+    :type dia: int
+    :param sar: w/h sample aspect ratio, defaults to None
+    :type sar: Fraction, optional
+    :param color: mask color, defaults to "black"
+    :type color: str, optional
+    :returns: a filter chain spec
+    """
     r = dia / 2
-    filtspec = [
-        [
-            ("color", {"c": "black", "s": f"{dia}x{dia}", "r": 1, "d": 1}),
-            "format=rgba",
-            (
-                "geq",
-                {
-                    "lum": "lum(X, Y)",
-                    "a": f"if(gt((X-{r})^2+(Y-{r})^2,{r**2}),255,0)",
-                },
-            ),
-        ],
-    ]
 
-    if sar is not None:
+    if sar is None or sar[0] == sar[1]:
+        # square frame with transparent circle
+        sstr = f"{w or dia}x{h or dia}"
+        astr = f"if(gt((X-{x0+r})^2+(Y-{y0+r})^2,{r**2}),255,0)"
+    else:
+        # rectangular frame with transparent oval
         sar = sar[0] / sar[1]
-        filtspec[0].append(
-            (
-                "scale",
-                {"w": dia, "h": dia * sar} if sar < 1 else {"w": dia / sar, "h": dia},
-            )
-        )
+        if sar < 1:
+            rx = r
+            ry = r * sar
+        else:
+            rx = r / sar
+            ry = r
 
-    fftranscode(
-        FilterGraph(filtspec),
-        pngfile,
-        f_in="lavfi",
-        pix_fmt="ya8",
-        vframes=1,
-        overwrite=True,
-    )
+        sstr = f"{w or round(2*rx)}x{h or round(2*ry)}"
+        astr = f"if(gt((X-{x0+round(rx)})^2/{rx**2}+(Y-{y0+ry})^2/{ry**2},1),255,0)"
 
+    return [
+        ("color", {"c": color, "s": sstr}),
+        "trim=end_frame=1",
+        "format=ya8",
+        ("geq", {"lum": "lum(X, Y)", "a": astr}),
+    ]
 
 
 def form_filters(info, p, config):
 
-    if "circ" not in p:
-        raise ValueError("no mask specified")
-
-    filters = []
+    fchain = []
+    fg = [fchain]
+    links = {}
 
     h = info["height"]
     w = info["width"]
@@ -54,51 +57,85 @@ def form_filters(info, p, config):
     sar = sar_spec if sar_spec is not None else info.get("sample_aspect_ratio", None)
     if isinstance(sar, Fraction):
         sar = [sar.numerator, sar.denominator]
+    elif isinstance(sar, (int, float)):
+        sar = [sar, 1]
 
-    if config["SquarePixel"] == 0:
-        if sar_spec is not None:  # specify the profile SAR
-            filters.append(f"setsar={sar_spec[0]}/{sar_spec[1]}")
+    has_mask = "circ" in p
+    is_nonsquare = sar is not None and sar[0] != sar[1]
+    upscaling = config.get("Scaling", "up") != "down"
 
+    # configure squaring pixels
+    square_pixels = is_nonsquare and config["SquarePixel"]
+    if square_pixels:
+        # add scale filter + setsar filter
+        if (sar[0] < sar[1]) == upscaling:
+            h = 2 * round(h * sar[1] / sar[0] / 2)
+            fchain.append(f"scale=h={h}")
+        elif (sar[0] > sar[1]) == (config["SquarePixel"] < 0):
+            w = 2 * round(w * sar[0] / sar[1] / 2)
+            fchain.append(f"scale=w={w}:h={h}")
+        fchain.append(f"setsar=1:1")
+
+    # configure cropping setup
+    # - cropping always occurs after scaling
+    # - if pixel remain nonsquare, crop spec must be scaled first
+    do_crop = config.get("CropVideo", True) and has_mask
+    do_mask = config.get("ApplyMask", True) and has_mask
+    if do_crop or do_mask:
         x0, y0, dia = p["circ"]
-        wc = hc = dia
-        if sar is not None:
-            # profile params are defined assuming stretching
-            if sar[0] < sar[1]:
-                r = sar[0] / sar[1]
-                hc *= r
-                y0 *= r
-            else:
-                r = sar[1] / sar[0]
-                wc *= r
-                x0 *= r
-        filters.append(f"crop={wc}:{hc}:{x0}:{y0}")
-    else:
-        # if pixels are to be squared
-        if sar is not None:
-            # if sar_spec is not None and
-            # specify
-            if (sar[0] < sar[1]) == (config["SquarePixel"] > 0):
-                h = info["height"] * sar[1] // sar[0]
-                filters.append(f"scale=height={h}")
-            elif (sar[0] > sar[1]) == (config["SquarePixel"] < 0):
-                w = info["width"] * sar[0] // sar[1]
-                filters.append(f"scale={w}")
-        filters.append(f"setsar=1:1")
 
-        x0, y0, dia = p["circ"]
-        if sar is not None and config["SquarePixel"] < 0:
-            # profile params are defined assuming stretching
+        if square_pixels and not upscaling:
+            # profile params are defined assuming upscaling
             s = min(sar) / max(sar)
-            dia *= s ** 2.0
-            x0 *= s
-            y0 *= s
-        dia = round(dia)
-        w = dia if w > x0 + dia else w - x0
-        h = dia if h > y0 + dia else h - y0
-        filters.append(f"crop={w}:{h}:{round(x0)}:{round(y0)}")
-    fg = ",".join(filters)
-    return fg, dia, (None if config["SquarePixel"] else sar)
+            dia = dia * s
+            if sar[0] < sar[1]:
+                x0 *= s
+            else:
+                y0 *= s
 
+        hc = wc = dia
+
+        if is_nonsquare and not square_pixels:
+            # if not squaring, adjust cropping position
+            if (sar[0] < sar[1]) == upscaling:
+                s = sar[0] / sar[1] if upscaling else sar[1] / sar[0]
+                hc = round(hc * s)
+                y0 = round(y0 * s)
+            else:
+                s = sar[1] / sar[0] if upscaling else sar[0] / sar[1]
+                wc = round(wc * s)
+                y0 = round(y0 * s)
+
+    if do_crop:
+        hadj = h - (y0 + hc)
+        if hadj < 0:
+            hc += hadj
+        wadj = w - (x0 + wc)
+        if wadj < 0:
+            wc += wadj
+
+        fchain.append(f"crop={wc// 2 * 2}:{hc// 2 * 2}:{round(x0)}:{round(y0)}")
+
+    # configure masking setup
+    if do_mask:
+        sar = None if (square_pixels or not is_nonsquare) else sar
+        fg.append(
+            mask_chain := create_mask(
+                round(dia / 2) * 2 if do_crop else dia,
+                sar,
+                x0=0 if do_crop else x0,
+                y0=0 if do_crop else y0,
+                w=None if do_crop else w,
+                h=None if do_crop else h,
+            )
+        )
+        fg.append(["overlay"])
+        links[(2, 0, 0)] = (0, len(fchain) - 1, 0)
+        links[(2, 0, 1)] = (1, len(mask_chain) - 1, 0)
+        fg = [fg[1]]
+        links = {}
+
+    return ffmpegio.FilterGraph(fg, links=links)
 
 
 def transcode(src, config):
@@ -109,17 +146,17 @@ def transcode(src, config):
         raise ValueError("not a video file")
 
     try:
-        prof = find_profile(info, config["Profiles"])
+        prof = probe.find_profile(info, config["Profiles"])
     except:
         raise ValueError("no matching profile found")
 
-    dst = get_dst(src, config)
+    dst = probe.get_dst(config, src)
     makedirs(path.split(dst)[0], exist_ok=True)
 
     args = {
-        "inputs": [(src, None)],
+        "inputs": [(src, {"hwaccel": "none"})],
         "outputs": [(dst, {**config["OutputOptions"]})],
-        "global_options": {"hide_banner": None, "loglevel": "fatal"},
+        "global_options": {"hide_banner": None, "loglevel": "debug"},
     }
     args["global_options"]["y" if config["Overwrite"] else "n"] = None
 
