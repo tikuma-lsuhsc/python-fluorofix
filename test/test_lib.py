@@ -12,40 +12,42 @@ def run(config, src):
 
     args = {
         "inputs": [(src, {"hwaccel": "none"})],
-        # "outputs": [(dst, {**config["OutputOptions"]})],
-        "outputs": [("test.png", {"vframes": 1})],
-        "global_options": {"hide_banner": None, "loglevel": "debug"},
+        "outputs": [(dst, {**config["OutputOptions"]})],
+        # "outputs": [("test.png", {"vframes": 1})],
+        "global_options": {"hide_banner": None, "loglevel": "fatal"},
     }
-    config["Overwrite"] = True
     args["global_options"]["y" if config["Overwrite"] else "n"] = None
 
-    fg = form_filters(info, config["Profiles"][prof][1], config)
-    print(fg)
-
-    args["global_options"]["filter_complex"] = fg
+    args["global_options"]["filter_complex"] = form_filters(
+        info, config["Profiles"][prof][1], config
+    )
 
     if ffmpegio.ffmpegprocess.run(args, capture_log=None).returncode:
         raise RuntimeError("FFmpeg execution failed...")
 
 
 if __name__ == "__main__":
+    boxdir = r"C:\Users\tikum\Box"
+
     new_files = [
         "cc 6122  cpbar with pharyngeal emtying Rec1_hd_video_2022_06_01T12_19_09_066.mp4",
         "DUPAN 5 2 2022 UES and E.mp4",
     ]
     ignore_files = [
-        *new_files,
+        # *new_files,
         "aleJohn   NO Initation of pharyngeal swallow  with severe saliva pooling 2 4 2021 Rec1_hd_video_2021_02_04T16_07_41_099.mp4",
         "CAGE ZENKRec1_hd_video_2021_06_14T13_09_26_936.mp4",
     ]
 
-    src_dir = r"C:\Users\Takeshi Ikuma\Box\BRSLP presentation\FLOUROFIX ITEMS"
-    json_file = r"data\florofix items\old_1080p.json"
+    src_dir = path.join(boxdir, "BRSLP presentation", "FLOUROFIX ITEMS")
+    json_file = path.join(src_dir, "new_1080p.json")
 
     config = defaultOption()
     config = readOptionJSON(json_file, config)
     config["Overwrite"] = True
     config["OutputFolder"] = r"data\florofix items"
+    config["ApplyMask"] = True
+    config['OutputOptions']['crf'] = 23
     pprint(config)
 
     from fluorofix import probe
@@ -53,7 +55,7 @@ if __name__ == "__main__":
     from glob import glob
 
     for src in glob(src_dir + "/*.mp4"):
-        if path.basename(src) in ignore_files:
+        if path.basename(src) not in new_files:
             continue
         print(src)
         try:
@@ -74,4 +76,3 @@ if __name__ == "__main__":
             run(config, src)
         except:
             pass
-        exit()

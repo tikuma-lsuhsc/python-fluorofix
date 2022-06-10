@@ -41,7 +41,7 @@ def create_mask(dia, sar=None, color="black", x0=0, y0=0, w=None, h=None):
         ("color", {"c": color, "s": sstr}),
         "trim=end_frame=1",
         "format=ya8",
-        ("geq", {"lum": "lum(X, Y)", "a": astr}),
+        ("geq", {"lum": "lum(X,Y)", "cb": "cb(X,Y)", "a": astr}),
     ]
 
 
@@ -132,8 +132,6 @@ def form_filters(info, p, config):
         fg.append(["overlay"])
         links[(2, 0, 0)] = (0, len(fchain) - 1, 0)
         links[(2, 0, 1)] = (1, len(mask_chain) - 1, 0)
-        fg = [fg[1]]
-        links = {}
 
     return ffmpegio.FilterGraph(fg, links=links)
 
