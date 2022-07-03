@@ -31,18 +31,60 @@ def find_profile(info, profiles):
     return next((k for k, p in profiles.items() if test(p[0])))
 
 
-def get_dst(ctx, src):
+def get_dst(ctx, src, dstfile=None, dstdir=None):
+    """generate output filepath
+
+    :param ctx: fluorofix context
+    :type ctx: dict
+    :param src: source file
+    :type src: str
+    :param dstfile: user-specified output file name, defaults to None
+    :type dstfile: str, optional
+    :param dstdir: user-specified output directory, defaults to None
+    :type dstdir: str, optional
+    :return: output filepath
+    :rtype: str
+
+    """
     srcfolder, srcfile = path.split(src)
-    dstfile = path.splitext(srcfile)[0]
-    dstsuffix = ctx["OutputSuffix"]
-    if dstsuffix is not None:
-        dstfile += dstsuffix
-    dstfile += ctx["OutputExt"]
-    dstfolder = ctx["OutputFolder"]
-    return path.join(
-        dstfolder if dstfolder else srcfolder if dstsuffix else path.expanduser("~"),
-        dstfile,
-    )
+
+    if dstfile:
+        dstfolder, dstfile = path.split(dstfile)
+    else:
+        dstfolder = None
+
+    if dstdir:
+        dstfolder = dstdir
+
+    if dstfile:
+        dstfile, dstext = path.splitext(dstfile)
+
+    else:
+        dstfile = path.splitext(srcfile)[0]
+        dstfile += ctx.get("OutputSuffix", "")
+        dstext = ""
+
+    dstfile += dstext or ctx.get("OutputExt", ".mp4")
+
+    if not (dstdir or (dstfile and dstfolder)):
+        # if dstfolder not specified, use one of:
+        # 1. default output path
+        # 2. folder of the input file
+        # 3. user's home folder
+        dstfolder = ctx.get("OutputFolder", "") or (
+            srcfolder if srcfile != dstfile else path.expanduser("~")
+        )
+
+    dst = path.join(dstfolder, dstfile)
+
+    # in/out files must be different
+    try:
+        if path.samefile(src, dst):
+            raise ValueError("Cannot overwrite the input file.")
+    except:
+        pass # dst does not exist (or both...)
+
+    return dst
 
 
 def check_file(ctx, filepath):
