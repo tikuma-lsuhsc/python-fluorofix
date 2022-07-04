@@ -1,11 +1,17 @@
 import logging
+import re
 from ffmpegio import probe
 from os import path, walk
 
 from . import configure
 
+def remove_file_protocol(url):
+    return re.sub(r"^file://(localhost)?(/)?", "", url, flags=re.IGNORECASE)
+
 
 def is_video(filepath, profiles=None):
+
+    filepath = remove_file_protocol(filepath)
 
     try:
         info = probe.video_streams_basic(filepath)[0]
@@ -47,6 +53,8 @@ def get_dst(ctx, src, dstfile=None, dstdir=None):
 
     """
     srcfolder, srcfile = path.split(src)
+    if not path.exists(srcfolder):
+        srcfolder = ""
 
     if dstfile:
         dstfolder, dstfile = path.split(dstfile)
@@ -72,7 +80,7 @@ def get_dst(ctx, src, dstfile=None, dstdir=None):
         # 2. folder of the input file
         # 3. user's home folder
         dstfolder = ctx.get("OutputFolder", "") or (
-            srcfolder if srcfile != dstfile else path.expanduser("~")
+            srcfolder if srcfolder and srcfile != dstfile else path.expanduser("~")
         )
 
     dst = path.join(dstfolder, dstfile)
@@ -82,7 +90,7 @@ def get_dst(ctx, src, dstfile=None, dstdir=None):
         if path.samefile(src, dst):
             raise ValueError("Cannot overwrite the input file.")
     except:
-        pass # dst does not exist (or both...)
+        pass  # dst does not exist (or both...)
 
     return dst
 
