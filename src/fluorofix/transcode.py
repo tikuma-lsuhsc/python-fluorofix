@@ -1,3 +1,4 @@
+from copy import deepcopy
 from fractions import Fraction
 from ffmpegio import probe, ffmpegprocess, transcode as fftranscode, FilterGraph
 import re
@@ -7,136 +8,234 @@ from os import path, makedirs
 import ffmpegio
 
 
-def create_mask(dia, sar=None, color="black", x0=0, y0=0, w=None, h=None):
-    """Create an FFmpeg filtergraph to generate a circular mask to deidentify
+def create_mask_alpha(
+    vidw, vidh, x0, y0, w, h, fill_in=False, is_rect=False, sx=1.0, sy=1.0
+):
+    """create a filterchain to form the alpha channel of a rectangular or ellipstical mask
 
-    :param dia: mask diameter in pixels
-    :type dia: int
-    :param sar: w/h sample aspect ratio, defaults to None
-    :type sar: Fraction, optional
-    :param color: mask color, defaults to "black"
+    :param vidw: video frame width
+    :type vidw: int
+    :param vidh: video frame height
+    :type vidh: int
+    :param x0: left edge of the mask
+    :type x0: numeric
+    :param y0: upper edge of the mask
+    :type y0: numeric
+    :param w: width of the mask
+    :type w: numeric
+    :param h: height of the mask
+    :type h: numeric
+    :param fill_in: True to mask inside, False to mask outside, defaults to False
+    :type fill_in: bool, optional
+    :param is_rect: True for rectangular mask, False for elliptical mask, defaults to False
+    :type is_rect: bool, optional
+    :param color: color of the mask, defaults to "black"
     :type color: str, optional
-    :returns: a filter chain spec
+    :return: ffmpeg filterchain expression
+    :rtype: str
     """
-    r = dia / 2
 
-    if sar is None or sar[0] == sar[1]:
-        # square frame with transparent circle
-        sstr = f"{w or dia}x{h or dia}"
-        astr = f"if(gt((X-{x0+r})^2+(Y-{y0+r})^2,{r**2}),255,0)"
+    if is_rect:
+        x1 = x0 + w
+        y1 = y0 + (w or h)
+        aif = f"between(X,{x0},{x1})*bewteen(Y,{y0},{y1})"
+        if not fill_in:
+            aif = f"not({aif})"
     else:
-        # rectangular frame with transparent oval
-        sar = sar[0] / sar[1]
-        if sar < 1:
-            rx = r
-            ry = r * sar
+        ieq = "lt" if fill_in else "gt"
+        rx = w / 2
+        ry = (h or w) / 2
+        xe = x0 + rx
+        ye = y0 + ry
+        rx2 = rx**2
+        ry2 = ry**2
+        astr = f"{ieq}((X-{xe})^2/{rx2}+(Y-{ye})^2/{ry2},1)"
+
+    return f"nullsrc=s={vidw}x{vidh},format=grayscale,geq=lum='if({astr},255,0)'"
+
+
+def create_mask(vidw, vidh, mask_shapes, color="black"):
+    """create lavfi input expression to form a mask
+
+    :param vidw: video frane width
+    :type vidw: int
+    :param vidh: video frame height
+    :type vidh: int
+    :param mask_shapes: mask shape specifications (keyword arguments for create_mask_alpha)
+    :type mask_shapes: sequence of dicts
+    :param color: _description_, defaults to 'black'
+    :type color: str, optional
+    """
+
+    # 1. define filtergraph to form mask's alpha channel
+    # 1a: generate individual alpha shapes
+    alpha_chains = [create_mask_alpha(**args) for args in mask_shapes]
+
+    nshapes = len(alpha_chains)
+    if nshapes > 1:
+        # 1b. if multiple shapes, mix'em together (if opque in one shape, stays opaque)
+        infgs = "".join([f"{fc}[a{i}];" for i, fc in enumerate(alpha_chains)])
+        inp = "".join([f"[a{i}];" for i in range(nshapes)])
+        alpha_fg = f"{infgs}{inp}mix={nshapes}:1:1[ain];"
+    else:
+        # 1b. if one shape, ready to go
+        alpha_fg = f"{alpha_chains[0]}[ain];"
+
+    # 2. carve a solid color frame to form the final mask
+    return f"color=c={color}:s={vidw}x{vidh}[cin];{alpha_fg},[cin]alphamerge,trim=end_frame=1"
+
+
+def masks_to_crop(vidw, vidh, mask_shapes):
+    """find extent of unmasked area
+
+    :param vidw: video frane width
+    :type vidw: int
+    :param vidh: video frame height
+    :type vidh: int
+    :param mask_shapes: mask shape specifications (keyword arguments for create_mask_alpha)
+    :type mask_shapes: sequence of dicts
+    :return: extent of unmasked area: (x0,y0,x1,y1)
+    :rtype: tuple of 4 ints
+    """    
+
+    x0 = 0
+    y0 = 0
+    x1 = vidw
+    y1 = vidh
+    for d in mask_shapes:
+        x = d["x0"]
+        y = d["y0"]
+        w = d["w"]
+        h = d["h"]
+        if x > x0:
+            x0 = x
+        if y > y0:
+            y0 = y
+        if (xnew := x + w) < x1:
+            x1 = xnew
+        if (ynew := y + h) < y1:
+            y1 = ynew
+
+    return x0, y0, x1-x0, y1-y0
+
+
+def adjust_masks(width, height, mask_shapes, sar=1, square=None, crop=None):
+    """adjust mask specs from pre to post video frame manipulation
+
+    :param width: original video frame width
+    :type width: int
+    :param height: original video frame height
+    :type height: int
+    :param mask_shapes: mask shape specifications (keyword arguments for create_mask_alpha)
+    :type mask_shapes: sequence of dicts
+    :param sar: sample aspect ratio, defaults to 1
+    :type sar: int or Fraction, optional
+    :param square: non-None to square non-square pixels, defaults to None
+    :type square: None, "upscale" or "downscale", optional
+    :param crop: tuple (x0, y0, w, h) to crop, defaults to None
+    :type crop: sequence of 4 ints, optional
+    :return: adjusted mask_shapes
+    :rtype: list of dicts
+    """
+    mask_shapes = deepcopy(mask_shapes)
+
+    if crop is not None:
+        x0, y0, width, height = crop
+        for d in mask_shapes:
+            d["x0"] -= x0
+            d["y0"] -= y0
+
+    if sar != 1 and square:
+        w, h = scale_frame(width, height, sar, square, crop)
+        sx = sy = 1.0
+        if h != height:
+            sy = h / height
+            for d in mask_shapes:
+                d["y0"] *= sy
+                d["h"] *= sy
         else:
-            rx = r / sar
-            ry = r
+            sx = w / width
+            for d in mask_shapes:
+                d["x0"] *= sx
+                d["w"] *= sx
 
-        sstr = f"{w or round(2*rx)}x{h or round(2*ry)}"
-        astr = f"if(gt((X-{x0+round(rx)})^2/{rx**2}+(Y-{y0+ry})^2/{ry**2},1),255,0)"
-
-    return [
-        ("color", {"c": color, "s": sstr}),
-        "trim=end_frame=1",
-        "format=ya8",
-        ("geq", {"lum": "lum(X,Y)", "cb": "cb(X,Y)", "a": astr}),
-    ]
+    return mask_shapes
 
 
-def form_filters(info, p, config):
+def scale_frame(width, height, sar=1, square=None, crop=None):
 
-    fchain = []
-    fg = [fchain]
-    links = {}
+    if crop is not None:
+        # if crop is specified, ignore the default frame size
+        x0, y0, width, height = crop
 
-    h = info["height"]
-    w = info["width"]
-    sar_spec = p.get("sar", None)  # SAR in profile takes precedence over video header
-    sar = sar_spec if sar_spec is not None else info.get("sample_aspect_ratio", None)
-    if isinstance(sar, Fraction):
-        sar = [sar.numerator, sar.denominator]
-    elif isinstance(sar, (int, float)):
-        sar = [sar, 1]
+    if not isinstance(sar, Fraction):
+        sar = Fraction(sar)
+    sarw, sarh = sar.as_integer_ratio()
 
-    has_mask = "circ" in p
-    is_nonsquare = sar is not None and sar[0] != sar[1]
-    upscaling = config.get("Scaling", "up") != "down"
+    if sar != 1 and square:
+        upscaling = square == "upscale"
 
-    # configure squaring pixels
-    square_pixels = is_nonsquare and config["SquarePixel"]
-    if square_pixels:
         # add scale filter + setsar filter
-        if (sar[0] < sar[1]) == upscaling:
-            h = 2 * round(h * sar[1] / sar[0] / 2)
-            fchain.append(f"scale=h={h}")
-        elif (sar[0] > sar[1]) == (config["SquarePixel"] < 0):
-            w = 2 * round(w * sar[0] / sar[1] / 2)
-            fchain.append(f"scale=w={w}:h={h}")
-        fchain.append(f"setsar=1:1")
+        # round to a closest even number
+        if (sarw < sarh) == upscaling:
+            height = 2 * round(height * sarh / sarw / 2)
+        else:
+            width = 2 * round(width * sarw / sarh / 2)
+    return width, height
 
-    # configure cropping setup
-    # - cropping always occurs after scaling
-    # - if pixel remain nonsquare, crop spec must be scaled first
-    do_crop = config.get("CropVideo", True) and has_mask
-    do_mask = config.get("ApplyMask", True) and has_mask
-    if do_crop or do_mask:
-        x0, y0, dia = p["circ"]
 
-        if square_pixels and not upscaling:
-            # profile params are defined assuming upscaling
-            s = min(sar) / max(sar)
-            dia = dia * s
-            if sar[0] < sar[1]:
-                x0 *= s
-            else:
-                y0 *= s
+def form_vf(width, height, sar=1, src=None, mask=None, square=None, crop=None):
+    # square: None, 'upscale','downscale'
+    # sar
+    # crop
+    # mask
 
-        hc = wc = dia
+    filt_specs = []
 
-        if is_nonsquare and not square_pixels:
-            # if not squaring, adjust cropping position
-            if (sar[0] < sar[1]) == upscaling:
-                s = sar[0] / sar[1] if upscaling else sar[1] / sar[0]
-                hc = round(hc * s)
-                y0 = round(y0 * s)
-            else:
-                s = sar[1] / sar[0] if upscaling else sar[0] / sar[1]
-                wc = round(wc * s)
-                y0 = round(y0 * s)
+    if crop is not None:
+        x0, y0, x1, y1 = crop
+        width = x1 - x0
+        height = y1 - y0
+        filt_specs.append(f"crop={width}:{height}:{x0}:{y0}")
 
-    if do_crop:
-        hadj = h - (y0 + hc)
-        if hadj < 0:
-            hc += hadj
-        wadj = w - (x0 + wc)
-        if wadj < 0:
-            wc += wadj
+    if not isinstance(sar, Fraction):
+        sar = Fraction(sar)
 
-        fchain.append(f"crop={wc// 2 * 2}:{hc// 2 * 2}:{round(x0)}:{round(y0)}")
+    if sar != 1 and square:
+        w, h = scale_frame(width, height, sar, None, square)
+        filt_specs.append(f"scale=h={h}" if height != h else f"scale=w={w}")
+        filt_specs.append(f"setsar=1:1")
+    else:
+        sarw, sarh = sar.as_integer_ratio()
+        filt_specs.append(f"setsar={sarw}:{sarh}")
+
+    fg = ",".join(filt_specs)
 
     # configure masking setup
-    if do_mask:
-        sar = None if (square_pixels or not is_nonsquare) else sar
-        fg.append(
-            mask_chain := create_mask(
-                round(dia / 2) * 2 if do_crop else dia,
-                sar,
-                x0=0 if do_crop else x0,
-                y0=0 if do_crop else y0,
-                w=None if do_crop else w,
-                h=None if do_crop else h,
-            )
-        )
-        fg.append(["overlay"])
-        links[(2, 0, 0)] = (0, len(fchain) - 1, 0)
-        links[(2, 0, 1)] = (1, len(mask_chain) - 1, 0)
+    if mask:
+        # add labels to the main filter chain
+        fg = f"[{src}]{fg}[main];[main][{mask}]overlay"
 
-    return ffmpegio.FilterGraph(fg, links=links)
+    return fg
 
 
-def transcode(src, config):
+def transcode(src, dst, mask_config, src_type=None, enc_config=None, audio_config=None):
+    """apply mask to src video and transcode
+
+    :param src: input video
+    :type src: str
+    :param mask_config: _description_
+    :type mask_config: _type_
+    :param enc_config: _description_, defaults to None
+    :type enc_config: _type_, optional
+    :param src_type: _description_, defaults to None
+    :type src_type: _type_, optional
+    :raises ValueError: _description_
+    :raises ValueError: _description_
+    :raises RuntimeError: _description_
+    :return: _description_
+    :rtype: _type_
+    """
 
     try:
         info = probe.video_streams_basic(src)[0]
