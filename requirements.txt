@@ -1,6 +1,6 @@
-ffmpegio-core
-cerberus
 pyinstaller
 # tqdm
-# PyQt5
-# matplotlib
+PyQt6
+matplotlib
+pytest
+ffmpegio
