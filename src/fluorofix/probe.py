@@ -9,22 +9,22 @@ def remove_file_protocol(url):
     return re.sub(r"^file://(localhost)?(/)?", "", url, flags=re.IGNORECASE)
 
 
-def is_video(filepath, profiles=None):
+def video_info(filepath, profiles=None):
 
     filepath = remove_file_protocol(filepath)
 
+    info = None
     try:
         info = probe.video_streams_basic(filepath)[0]
-        found = True
     except:
-        found = False
+        pass
 
     prof = None
     try:
-        if found:
+        if info:
             prof = find_profile(info, profiles)
     finally:
-        return found, prof
+        return info, prof
 
 
 def find_profile(info, profiles):
