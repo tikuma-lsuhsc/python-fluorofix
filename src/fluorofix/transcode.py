@@ -137,7 +137,7 @@ def get_output_size(width, height, sar=1, square=None, crop=None):
     :return: _description_
     :rtype: _type_
     """
-    if crop is not None:
+    if crop is not False and crop is not None:
         # if crop is specified, ignore the default frame size
         x0, y0, width, height = crop
 
@@ -177,7 +177,7 @@ def adjust_masks(width, height, mask_shapes, sar=1, square=None, crop=None):
     """
     mask_shapes = deepcopy(mask_shapes)
 
-    if crop is not None:
+    if crop is not False and crop is not None:
         x0, y0, width, height = crop
         for d in mask_shapes:
             d["x0"] -= x0
@@ -208,7 +208,7 @@ def form_vf(width, height, sar=None, src=None, mask=None, square=None, crop=None
 
     filt_specs = []
 
-    if crop is not None:
+    if crop is not None and crop is not False:
         x0, y0, width, height = crop
         filt_specs.append(f"crop={width}:{height}:{x0}:{y0}")
 
@@ -322,7 +322,7 @@ def transcode(
     fg = form_vf(width, height, sar, "0:v", "1:v" if nmasks else False, square, crop)
     if fg:
         if nmasks:
-            args["global_options"]["filer_complex"] = fg
+            args["global_options"]["filter_complex"] = fg
             args["outputs"][0][1]["map"] = ["vout", "0:a?"]
         else:
             args["outputs"][0][1]["vf"] = fg
