@@ -323,7 +323,7 @@ def transcode(
     if fg:
         if nmasks:
             args["global_options"]["filter_complex"] = fg
-            args["outputs"][0][1]["map"] = ["vout", "0:a?"]
+            args["outputs"][0][1]["map"] = ["[vout]", "0:a?"]
         else:
             args["outputs"][0][1]["vf"] = fg
 
